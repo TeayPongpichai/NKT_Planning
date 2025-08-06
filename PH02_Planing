@@ -1,0 +1,25 @@
+SELECT
+  i.StockCode,
+  i.Description,
+  i.Unit,
+  i.OUN,
+  i.LT,
+  i.Vendor,
+  IFNULL(s.qty, 0) AS stock_qty,
+  c.class,
+  ROUND(c.usage_rate, 2) AS usage_rate
+FROM item_master i
+
+-- Join สต๊อกจาก location = 'PH02'
+LEFT JOIN (
+  SELECT stockcode, qty
+  FROM stock
+  WHERE location = 'ph02'
+) s ON TRIM(i.StockCode) = TRIM(s.stockcode)
+
+-- Join class + usage_rate จาก location = 'PH02'
+LEFT JOIN (
+  SELECT stockcode, class, usage_rate
+  FROM class_plan_from_nonmove
+  WHERE location = 'ph02'
+) c ON TRIM(i.StockCode) = TRIM(c.stockcode);
