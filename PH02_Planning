@@ -2,20 +2,62 @@ SELECT
   i.StockCode,
   i.Description,
   i.Unit,
+  IFNULL(s.qty, 0) AS Stock_qty,
+  pp.price_per AS Cost_unit,
   i.OUN,
-  i.LT,
-  i.Vendor,
-  IFNULL(s.qty, 0) AS stock_qty,
-  c.class,
-  ROUND(c.usage_rate, 2) AS usage_rate,
-  printf('%.2f', c.usage_rate) AS usage_rate_fmt,
+  c.class AS Class,
+  ROUND(c.usage_rate, 2) AS Usage_Rate,
   IFNULL(p.on_gr, 0) AS On_GR,
 
-  -- ✅ DOH = (stock_qty + On_GR) / usage_rate → ปัดเศษ 0 ตำแหน่ง
+  -- DOH = (Stock_qty + On_GR) / Usage_Rate
   ROUND(
     (IFNULL(s.qty, 0) + IFNULL(p.on_gr, 0)) / NULLIF(c.usage_rate, 0),
     0
-  ) AS DOH
+  ) AS DOH,
+
+  i.LT,
+
+  -- Status: TRUE if DOH <= LT
+  CASE
+    WHEN ROUND((IFNULL(s.qty, 0) + IFNULL(p.on_gr, 0)) / NULLIF(c.usage_rate, 0), 0) <= i.LT
+      THEN 'TRUE'
+    ELSE 'FALSE'
+  END AS Status,
+
+  -- Plan_PR
+  CASE
+    WHEN ROUND((IFNULL(s.qty, 0) + IFNULL(p.on_gr, 0)) / NULLIF(c.usage_rate, 0), 0) <= i.LT THEN
+      CASE
+        WHEN c.usage_rate > 0.5 THEN
+          (CAST(((i.LT - ROUND((IFNULL(s.qty, 0) + IFNULL(p.on_gr, 0)) / NULLIF(c.usage_rate, 0), 0)) 
+                * c.usage_rate + 4) / 5.0 AS INTEGER)) * 5
+        ELSE
+          ROUND((i.LT - ROUND((IFNULL(s.qty, 0) + IFNULL(p.on_gr, 0)) / NULLIF(c.usage_rate, 0), 0)) 
+                * c.usage_rate + 0.4999)
+      END
+    ELSE 0
+  END AS Plan_PR,
+
+  -- Value = Plan_PR × Cost_unit
+  ROUND(
+    (
+      CASE
+        WHEN ROUND((IFNULL(s.qty, 0) + IFNULL(p.on_gr, 0)) / NULLIF(c.usage_rate, 0), 0) <= i.LT THEN
+          CASE
+            WHEN c.usage_rate > 0.5 THEN
+              (CAST(((i.LT - ROUND((IFNULL(s.qty, 0) + IFNULL(p.on_gr, 0)) / NULLIF(c.usage_rate, 0), 0)) 
+                    * c.usage_rate + 4) / 5.0 AS INTEGER)) * 5
+            ELSE
+              ROUND((i.LT - ROUND((IFNULL(s.qty, 0) + IFNULL(p.on_gr, 0)) / NULLIF(c.usage_rate, 0), 0)) 
+                    * c.usage_rate + 0.4999)
+          END
+        ELSE 0
+      END
+    ) * IFNULL(pp.price_per, 0), 2
+  ) AS Value,
+
+  -- Vendor
+  i.Vendor
 
 FROM item_master i
 
@@ -38,4 +80,10 @@ LEFT JOIN (
   SELECT stockcode, SUM(qty) AS on_gr
   FROM ponogr
   GROUP BY stockcode
-) p ON TRIM(i.StockCode) = TRIM(p.stockcode);
+) p ON TRIM(i.StockCode) = TRIM(p.stockcode)
+
+-- JOIN ราคาต่อหน่วย
+LEFT JOIN (
+  SELECT stockcode, price_per
+  FROM price_per
+) pp ON TRIM(i.StockCode) = TRIM(pp.stockcode);
