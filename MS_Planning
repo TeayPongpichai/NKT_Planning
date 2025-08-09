@@ -6,7 +6,7 @@ SELECT
     p.price_per_vat AS Cost_Unit,
     p.order_unit AS OUN,
     c.class,
-    c.usage_rate,
+    ROUND(c.usage_rate, 2) AS usage_rate,
     COALESCE(pg.total_qty, 0) AS On_GR,
     COALESCE(r.qty, 0) AS Reservation,
     ROUND(
@@ -19,7 +19,8 @@ SELECT
         0
     ) AS DOH,
     COALESCE(v.vendor, 'ไม่พบข้อมูล Vendor') AS Vendor,
-    COALESCE(cl.client, '-') AS client
+    COALESCE(cl.client, '-') AS client,
+    COALESCE(cl.dealer, '-') AS ผู้แทน
 FROM Stock s
 LEFT JOIN price_per p
     ON s.stockcode = p.stockcode
