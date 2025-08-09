@@ -18,7 +18,8 @@ SELECT
         / NULLIF(CAST(REPLACE(c.usage_rate, ',', '') AS DECIMAL(18,8)), 0),
         0
     ) AS DOH,
-    COALESCE(v.vendor, 'ไม่พบข้อมูล Vendor') AS Vendor
+    COALESCE(v.vendor, 'ไม่พบข้อมูล Vendor') AS Vendor,
+    COALESCE(cl.client, '-') AS client
 FROM Stock s
 LEFT JOIN price_per p
     ON s.stockcode = p.stockcode
@@ -35,4 +36,6 @@ LEFT JOIN (
 LEFT JOIN Reservation r
     ON s.stockcode = r.stockcode
 LEFT JOIN vendor v
-    ON s.stockcode = v.stockcode;
+    ON s.stockcode = v.stockcode
+LEFT JOIN client cl
+    ON s.stockcode = cl.stockcode;
