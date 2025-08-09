@@ -20,7 +20,8 @@ SELECT
     ) AS DOH,
     COALESCE(v.vendor, 'ไม่พบข้อมูล Vendor') AS Vendor,
     COALESCE(cl.client, '-') AS client,
-    COALESCE(cl.dealer, '-') AS ผู้แทน
+    COALESCE(cl.dealer, '-') AS ผู้แทน,
+    COALESCE(uc.stockcode, '-') AS รายการยกเลิก
 FROM Stock s
 LEFT JOIN price_per p
     ON s.stockcode = p.stockcode
@@ -39,4 +40,7 @@ LEFT JOIN Reservation r
 LEFT JOIN vendor v
     ON s.stockcode = v.stockcode
 LEFT JOIN client cl
-    ON s.stockcode = cl.stockcode;
+    ON s.stockcode = cl.stockcode
+LEFT JOIN usercontrol uc
+    ON s.stockcode = uc.stockcode
+WHERE COALESCE(uc.stockcode, '-') = '-';
