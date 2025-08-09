@@ -1,0 +1,10 @@
+SELECT
+    s.stockcode,
+    s.description,
+    s.unit,
+    s.qty,
+    p.price_per_vat AS Cost_Unit
+FROM
+    Stock s
+LEFT JOIN price_per p
+    ON s.stockcode = p.stockcode;
