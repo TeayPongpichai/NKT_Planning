@@ -4,8 +4,11 @@ SELECT
     s.unit,
     s.qty,
     p.price_per_vat AS Cost_Unit,
-    p.order_unit AS OUN
+    p.order_unit AS OUN,
+    c.class
 FROM
     Stock s
 LEFT JOIN price_per p
-    ON s.stockcode = p.stockcode;
+    ON s.stockcode = p.stockcode
+LEFT JOIN class_plan c
+    ON s.stockcode = c.stockcode;
