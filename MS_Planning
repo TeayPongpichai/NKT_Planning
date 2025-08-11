@@ -14,8 +14,7 @@ SELECT
             CAST(REPLACE(s.qty, ',', '') AS DECIMAL(18,4))
           + COALESCE(pg.total_qty, 0)
           - COALESCE(CAST(REPLACE(r.qty, ',', '') AS DECIMAL(18,4)), 0)
-        )
-        / NULLIF(CAST(REPLACE(c.usage_rate, ',', '') AS DECIMAL(18,8)), 0),
+        ) / NULLIF(CAST(REPLACE(c.usage_rate, ',', '') AS DECIMAL(18,8)), 0),
         0
     ) AS DOH,
     COALESCE(v.vendor, 'ไม่พบข้อมูล Vendor') AS Vendor,
@@ -24,23 +23,30 @@ SELECT
     COALESCE(uc.stockcode, '-') AS รายการยกเลิก
 FROM Stock s
 LEFT JOIN price_per p
-    ON s.stockcode = p.stockcode
+  ON s.stockcode = p.stockcode
 LEFT JOIN class_plan c
-    ON s.stockcode = c.stockcode
+  ON s.stockcode = c.stockcode
 LEFT JOIN (
-    SELECT
-        stockcode,
-        SUM(CAST(REPLACE(qty, ',', '') AS DECIMAL(18,4))) AS total_qty
+    SELECT stockcode,
+           SUM(CAST(REPLACE(qty, ',', '') AS DECIMAL(18,4))) AS total_qty
     FROM ponogr
     GROUP BY stockcode
 ) pg
-    ON s.stockcode = pg.stockcode
+  ON s.stockcode = pg.stockcode
 LEFT JOIN Reservation r
-    ON s.stockcode = r.stockcode
+  ON s.stockcode = r.stockcode
 LEFT JOIN vendor v
-    ON s.stockcode = v.stockcode
+  ON s.stockcode = v.stockcode
 LEFT JOIN client cl
-    ON s.stockcode = cl.stockcode
-LEFT JOIN usercontrol uc
-    ON s.stockcode = uc.stockcode
-WHERE COALESCE(uc.stockcode, '-') = '-';
+  ON s.stockcode = cl.stockcode
+/* --- ทำ usercontrol ให้ไม่ซ้ำก่อน --- */
+LEFT JOIN (
+    SELECT stockcode
+    FROM (
+        SELECT u.*,
+               ROW_NUMBER() OVER (PARTITION BY stockcode ORDER BY `timestamp` DESC) AS rn
+        FROM usercontrol u
+    ) t
+    WHERE rn = 1
+) uc
+  ON s.stockcode = uc.stockcode;
