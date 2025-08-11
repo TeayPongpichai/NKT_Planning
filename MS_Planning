@@ -1,55 +1,65 @@
 SELECT *
 FROM (
-    SELECT
-        s.stockcode,
-        s.description,
-        s.unit,
-        s.qty,
-        p.price_per_vat AS Cost_Unit,
-        p.order_unit AS OUN,
-        c.class,
-        ROUND(c.usage_rate, 2) AS usage_rate,
-        COALESCE(pg.total_qty, 0) AS On_GR,
-        COALESCE(r.qty, 0) AS Reservation,
-        ROUND(
-            (
-                CAST(REPLACE(s.qty, ',', '') AS DECIMAL(18,4))
-              + COALESCE(pg.total_qty, 0)
-              - COALESCE(CAST(REPLACE(r.qty, ',', '') AS DECIMAL(18,4)), 0)
-            ) / NULLIF(CAST(REPLACE(c.usage_rate, ',', '') AS DECIMAL(18,8)), 0),
-            0
-        ) AS DOH,
-        COALESCE(v.vendor, 'ไม่พบข้อมูล Vendor') AS Vendor,
-        COALESCE(cl.client, '-') AS client,
-        COALESCE(cl.dealer, '-') AS ผู้แทน,
-        COALESCE(uc.stockcode, '-') AS รายการยกเลิก
-    FROM Stock s
-    LEFT JOIN price_per p
-      ON s.stockcode = p.stockcode
-    LEFT JOIN class_plan c
-      ON s.stockcode = c.stockcode
-    LEFT JOIN (
-        SELECT stockcode,
-               SUM(CAST(REPLACE(qty, ',', '') AS DECIMAL(18,4))) AS total_qty
-        FROM ponogr
-        GROUP BY stockcode
-    ) pg
-      ON s.stockcode = pg.stockcode
-    LEFT JOIN Reservation r
-      ON s.stockcode = r.stockcode
-    LEFT JOIN vendor v
-      ON s.stockcode = v.stockcode
-    LEFT JOIN client cl
-      ON s.stockcode = cl.stockcode
-    LEFT JOIN (
-        SELECT stockcode
-        FROM (
-            SELECT u.*,
-                   ROW_NUMBER() OVER (PARTITION BY stockcode ORDER BY `timestamp` DESC) AS rn
-            FROM usercontrol u
-        ) t
-        WHERE rn = 1
-    ) uc
-      ON s.stockcode = uc.stockcode
-) AS q
+  SELECT
+      s.stockcode,
+      s.description,
+      s.unit,
+      s.qty,
+      p.price_per_vat AS Cost_Unit,
+
+      /* ใช้ dummy_order_unit แทน OUN ถ้ามีและไม่เท่ากับ '-' */
+      COALESCE(NULLIF(duo.order_unit, '-'), p.order_unit) AS OUN,
+
+      c.class,
+      ROUND(c.usage_rate, 2) AS usage_rate,
+      COALESCE(pg.total_qty, 0) AS On_GR,
+      COALESCE(r.qty, 0)       AS Reservation,
+      ROUND(
+        (
+          CAST(REPLACE(s.qty, ',', '') AS REAL)
+          + COALESCE(pg.total_qty, 0)
+          - COALESCE(CAST(REPLACE(r.qty, ',', '') AS REAL), 0)
+        ) / NULLIF(CAST(REPLACE(c.usage_rate, ',', '') AS REAL), 0),
+        0
+      ) AS DOH,
+      COALESCE(v.vendor, 'ไม่พบข้อมูล Vendor') AS Vendor,
+      COALESCE(cl.client, '-') AS client,
+      COALESCE(cl.dealer, '-') AS ผู้แทน,
+      COALESCE(uc.stockcode, '-') AS รายการยกเลิก,
+
+      /* เก็บค่าเดิมไว้ดูประกอบที่ท้ายสุด */
+      COALESCE(CAST(duo.order_unit AS TEXT), '-') AS Dummy_OUN
+
+  FROM Stock s
+  LEFT JOIN price_per  p  ON s.stockcode = p.stockcode
+  LEFT JOIN class_plan c  ON s.stockcode = c.stockcode
+  LEFT JOIN (
+      SELECT stockcode, SUM(CAST(REPLACE(qty, ',', '') AS REAL)) AS total_qty
+      FROM ponogr
+      GROUP BY stockcode
+  ) pg ON s.stockcode = pg.stockcode
+  LEFT JOIN Reservation r ON s.stockcode = r.stockcode
+  LEFT JOIN vendor v      ON s.stockcode = v.stockcode
+  LEFT JOIN client cl     ON s.stockcode = cl.stockcode
+  LEFT JOIN (
+      SELECT stockcode
+      FROM (
+          SELECT u.*,
+                 ROW_NUMBER() OVER (PARTITION BY stockcode ORDER BY "timestamp" DESC) AS rn
+          FROM usercontrol u
+      ) t
+      WHERE rn = 1
+  ) uc ON s.stockcode = uc.stockcode
+
+  /* ทำ dummy_order_unit ให้ไม่ซ้ำ: เอาแถวล่าสุดต่อ stockcode */
+  LEFT JOIN (
+      SELECT stockcode, order_unit
+      FROM (
+          SELECT d.*,
+                 ROW_NUMBER() OVER (PARTITION BY stockcode ORDER BY "timestamp" DESC) AS rn
+          FROM dummy_order_unit d
+      ) x
+      WHERE rn = 1
+  ) duo ON s.stockcode = duo.stockcode
+) q
 WHERE q.รายการยกเลิก = '-';
