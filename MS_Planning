@@ -1,6 +1,11 @@
 SELECT *
 FROM (
   SELECT
+      CASE 
+          WHEN s.stockcode LIKE '12%' THEN 'เวชภัณฑ์'
+          ELSE 'พัสดุ'
+      END AS Type,
+
       s.stockcode,
       s.description,
       s.unit,
