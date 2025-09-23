@@ -1,0 +1,155 @@
+DROP VIEW "main"."Planing";
+CREATE VIEW Planing AS
+
+/* 
+  ขั้นตอนที่ 1: สร้าง CTE เพื่อคำนวณ usage_rate ที่มากที่สุด
+  ระหว่าง old_stockcode และ rep_stockcode
+*/
+WITH replacement_usage AS (
+    SELECT
+        ri.rep_stockcode,
+        MAX(COALESCE(old_plan.usage_rate, 0), COALESCE(rep_plan.usage_rate, 0)) AS final_usage_rate
+    FROM
+        replace_item AS ri
+    LEFT JOIN
+        class_plan AS old_plan ON ri.old_stockcode = old_plan.stockcode
+    LEFT JOIN
+        class_plan AS rep_plan ON ri.rep_stockcode = rep_plan.stockcode
+    GROUP BY
+        ri.rep_stockcode
+)
+
+/* Query หลักของ View */
+SELECT
+    q.Type,
+    q.stockcode,
+    q.description,
+    q.unit,
+    q.qty,
+    q.Cost_Unit,
+    q.OUN,
+    q.class,
+    q.usage_rate,
+    q.On_GR,
+    q.Reservation,
+    q.DOH,
+    q.Vendor,
+    q.client,
+    q.ผู้แทน,
+    q.LT,
+    q.LT_Remark
+FROM (
+  SELECT
+      CASE 
+          WHEN s.stockcode LIKE '12%' THEN 'เวชภัณฑ์'
+          ELSE 'พัสดุ'
+      END AS Type,
+
+      s.stockcode,
+      s.description,
+      s.unit,
+      s.qty,
+      p.price_per_vat AS Cost_Unit,
+
+      /* ใช้ dummy_order_unit แทน OUN ถ้ามีและไม่เท่ากับ '-' */
+      COALESCE(NULLIF(duo.order_unit, '-'), p.order_unit) AS OUN,
+
+      c.class,
+
+      /* 
+        ขั้นตอนที่ 3: แทนที่ usage_rate เดิมด้วยค่าจาก CTEs และ dummy_usage
+        โดยให้ dummy_usage มีความสำคัญสูงสุด
+      */
+      ROUND(COALESCE(du.usage_rate, ru.final_usage_rate, c.usage_rate), 2) AS usage_rate,
+
+      COALESCE(pg.total_qty, 0) AS On_GR,
+      COALESCE(r.qty, 0)       AS Reservation,
+      
+      /* 
+        ขั้นตอนที่ 4: อัปเดตสูตร DOH ให้ใช้ usage_rate ตัวใหม่
+        ที่ได้จาก COALESCE(du.usage_rate, ru.final_usage_rate, c.usage_rate)
+      */
+      ROUND(
+        (
+          CAST(REPLACE(s.qty, ',', '') AS REAL)
+          + COALESCE(pg.total_qty, 0)
+          - COALESCE(CAST(REPLACE(r.qty, ',', '') AS REAL), 0)
+        ) / NULLIF(CAST(REPLACE(COALESCE(du.usage_rate, ru.final_usage_rate, c.usage_rate), ',', '') AS REAL), 0),
+        0
+      ) AS DOH,
+
+      COALESCE(v.vendor, 'ไม่พบข้อมูล Vendor') AS Vendor,
+      COALESCE(cl.client, '-') AS client,
+      COALESCE(cl.dealer, '-') AS ผู้แทน,
+      COALESCE(uc.stockcode, '-') AS รายการยกเลิก,
+
+      /* LT: หาก NULL หรือ '-' ให้แทนด้วย 18 (เป็นตัวเลข) */
+      CASE 
+        WHEN lt.LT IS NULL OR lt.LT = '-' THEN 18
+        ELSE CAST(lt.LT AS REAL)
+      END AS LT,
+
+      /* LT_Remark: ถ้าไม่มีให้ '-' */
+      COALESCE(lt.LT_Remark, '-') AS LT_Remark,
+
+      /* เก็บค่าเดิมไว้ดูประกอบ */
+      COALESCE(CAST(duo.order_unit AS TEXT), '-') AS Dummy_OUN
+
+  FROM Stock s
+  LEFT JOIN price_per  p  ON s.stockcode = p.stockcode
+  LEFT JOIN class_plan c  ON s.stockcode = c.stockcode
+  
+  /* 
+    ขั้นตอนที่ 2: LEFT JOIN CTE (replacement_usage) เข้ามาใน Query หลัก
+  */
+  LEFT JOIN replacement_usage ru ON s.stockcode = ru.rep_stockcode
+
+  /* 
+    เพิ่มขั้นตอนที่ 1 (ของคุณ): LEFT JOIN dummy_usage เข้ามาใน Query หลัก
+    ถ้า dummy_usage มีหลายรายการต่อ stockcode ควรเลือกรายการที่ล่าสุด (ถ้ามี timestamp)
+    ในที่นี้จะสมมติว่ามี timestamp และเลือกรายการล่าสุด
+  */
+  LEFT JOIN (
+      SELECT stockcode, usage_rate
+      FROM (
+          SELECT du_inner.*,
+                 ROW_NUMBER() OVER (PARTITION BY stockcode ORDER BY "timestamp" DESC) AS rn
+          FROM dummy_usage du_inner
+      ) x
+      WHERE rn = 1
+  ) du ON s.stockcode = du.stockcode
+
+  LEFT JOIN (
+      SELECT stockcode, SUM(CAST(REPLACE(qty, ',', '') AS REAL)) AS total_qty
+      FROM ponogr
+      GROUP BY stockcode
+  ) pg ON s.stockcode = pg.stockcode
+  LEFT JOIN Reservation r ON s.stockcode = r.stockcode
+  LEFT JOIN vendor v      ON s.stockcode = v.stockcode
+  LEFT JOIN client cl     ON s.stockcode = cl.stockcode
+  LEFT JOIN (
+      SELECT stockcode
+      FROM (
+          SELECT u.*,
+                 ROW_NUMBER() OVER (PARTITION BY stockcode ORDER BY "timestamp" DESC) AS rn
+          FROM usercontrol u
+      ) t
+      WHERE rn = 1
+  ) uc ON s.stockcode = uc.stockcode
+
+  /* join custom_leadtime */
+  LEFT JOIN custom_leadtime lt ON s.stockcode = lt.stockcode
+
+  /* ทำ dummy_order_unit ให้ไม่ซ้ำ: เอาแถวล่าสุดต่อ stockcode */
+  LEFT JOIN (
+      SELECT stockcode, order_unit
+      FROM (
+          SELECT d.*,
+                 ROW_NUMBER() OVER (PARTITION BY stockcode ORDER BY "timestamp" DESC) AS rn
+          FROM dummy_order_unit d
+      ) x
+      WHERE rn = 1
+  ) duo ON s.stockcode = duo.stockcode
+) q
+WHERE q.รายการยกเลิก = '-'
+;
