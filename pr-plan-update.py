@@ -5,8 +5,14 @@ from gspread_dataframe import set_with_dataframe
 from datetime import datetime
 
 # --- 1. การตั้งค่า ---
-DB_FILE = "Drug_Supply.db"
-GSPREAD_CREDENTIALS = "credentials.json"
+# DB_FILE = "Drug_Supply.db"  <-- ปิดบรรทัดนี้ไป
+
+# --- ให้เปลี่ยนเป็น Path เต็มแบบนี้แทน ---
+
+# ตัวอย่างสำหรับ Windows (สำคัญ: ให้ใส่ r นำหน้า string เพื่อป้องกันปัญหาเรื่อง backslash \)
+DB_FILE = r"D:\งานเต้ย\12.Pharmacy\1.สารน้ำ\Google sheet\Drug_Supply.db"
+# เปลี่ยนเป็น Path เต็มที่ชี้ไปหาไฟล์ credentials.json
+GSPREAD_CREDENTIALS = r"D:\งานเต้ย\12.Pharmacy\1.สารน้ำ\Google sheet\credentials.json"
 SHEET_ID = "19EPvMA2LHyYgG2ljOvYNlseCRxH0nZa4P89tpTazKUA"
 WORKSHEET_NAME = "Sheet1"
 
